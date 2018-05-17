@@ -11,21 +11,21 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY
   3 .note.gnu.avr.deviceinfo 00000040  00000000  00000000  00000228  2**2
                   CONTENTS, READONLY
-  4 .debug_aranges 00000028  00000000  00000000  00000268  2**0
+  4 .debug_aranges 00000040  00000000  00000000  00000268  2**0
                   CONTENTS, READONLY, DEBUGGING
-  5 .debug_info   00000add  00000000  00000000  00000290  2**0
+  5 .debug_info   00000b4a  00000000  00000000  000002a8  2**0
                   CONTENTS, READONLY, DEBUGGING
-  6 .debug_abbrev 00000a1c  00000000  00000000  00000d6d  2**0
+  6 .debug_abbrev 00000a55  00000000  00000000  00000df2  2**0
                   CONTENTS, READONLY, DEBUGGING
-  7 .debug_line   000002b0  00000000  00000000  00001789  2**0
+  7 .debug_line   0000033b  00000000  00000000  00001847  2**0
                   CONTENTS, READONLY, DEBUGGING
-  8 .debug_frame  00000054  00000000  00000000  00001a3c  2**2
+  8 .debug_frame  00000068  00000000  00000000  00001b84  2**2
                   CONTENTS, READONLY, DEBUGGING
-  9 .debug_str    000004d4  00000000  00000000  00001a90  2**0
+  9 .debug_str    000004e0  00000000  00000000  00001bec  2**0
                   CONTENTS, READONLY, DEBUGGING
- 10 .debug_loc    00000083  00000000  00000000  00001f64  2**0
+ 10 .debug_loc    00000083  00000000  00000000  000020cc  2**0
                   CONTENTS, READONLY, DEBUGGING
- 11 .debug_ranges 00000018  00000000  00000000  00001fe7  2**0
+ 11 .debug_ranges 00000020  00000000  00000000  0000214f  2**0
                   CONTENTS, READONLY, DEBUGGING
 
 Disassembly of section .text:
@@ -130,7 +130,7 @@ int initGPIO(void)
   a8:	df 93       	push	r29
   aa:	cd b7       	in	r28, 0x3d	; 61
   ac:	de b7       	in	r29, 0x3e	; 62
-	//Set up input output direction on Port C and G
+	//Set up input output direction on Port B, C and G
 	DDRB |= (1<<DISPLAY_LED);	// Set the display back light's IO pin an an output. Leave other bits as they were.
   ae:	84 e2       	ldi	r24, 0x24	; 36
   b0:	90 e0       	ldi	r25, 0x00	; 0
@@ -166,6 +166,7 @@ int initGPIO(void)
   e4:	08 95       	ret
 
 000000e6 <main>:
+
 
 
 

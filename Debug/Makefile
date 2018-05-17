@@ -37,6 +37,7 @@ SUBDIRS :=
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS +=  \
+../gpio.c \
 ../main.c
 
 
@@ -47,15 +48,19 @@ ASM_SRCS +=
 
 
 OBJS +=  \
+gpio.o \
 main.o
 
 OBJS_AS_ARGS +=  \
+gpio.o \
 main.o
 
 C_DEPS +=  \
+gpio.d \
 main.d
 
 C_DEPS_AS_ARGS +=  \
+gpio.d \
 main.d
 
 OUTPUT_FILE_PATH +=AS2p.elf
@@ -72,6 +77,8 @@ LINKER_SCRIPT_DEP+=
 
 
 # AVR32/GNU C Compiler
+
+
 
 
 

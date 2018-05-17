@@ -2,30 +2,20 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: May 15, 2018
+ * Modified: May 17, 2018
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
 
 #include <avr/io.h> // input output header file for this AVR chip.
+#include "gpio.h"
 
 /*
  * Purpose of this version:
- * The purpose of this version of the program is to set up the General Purpose Inputs Outputs (GPIO) on ports B, C and G 
- * to read the buttons and light up the LEDs using a while loop.
+ * The purpose of this version of the software package is to introduce the idea of the include files.
+ * The code is the same as that of the previous version but spread in different files.
 */
 
-#define DISPLAY_LED PB7	// Display back light's LED is on Port B, pin 7.
-
-
-int initGPIO(void)
-{
-	//Set up input output direction on Port C and G
-	DDRB |= (1<<DISPLAY_LED);	// Set the display back light's IO pin an an output. Leave other bits as they were.
-	DDRC = 0b00000111;		// Set the direction of the IO pins on Port C to output on the 3 least significant bits and input on the 5 higher ones. 5 buttons and 3 LEDs.
-	DDRG |= 0b00000011;		// set the direction of the IO pins on Port G's lower 2 bytes as output (LEDs 1 & 2). Leave the other bits as they were.
-	return(0);
-}
 
 
 
@@ -57,5 +47,5 @@ int main(void)
 			PORTG &= 0b11111100;	// Turn off the LEDs if they are on.
 			PORTG |= temp;			// Copy the last 2 bits of temp to Port G to turn on the LEDs.
 	}
-	return(0);
+	return(0); // This line of code will never be executed since it is after the "while(1)" block
 }
