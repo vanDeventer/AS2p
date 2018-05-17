@@ -13,7 +13,11 @@ It is only at the end of the course that we introduce micro controllers and syst
 
 The text below this line in this README file is updated with each commit to enable a student to navigate rapidly between the diffent branch and commits.
 
-# Version's aim
-This commit is where we start to branch out.
+This version of the code introduces delays to see a flashing light. In this case, we use the display back light.
 
 ## Exercises
+- Change the lenght of the time on and off for the display back light.
+- Push the buttons to turn on the LEDs (nothing should happen).
+- Flash the LEDs instead of the display backlight LED.
+- Insert the code from the master branch that connects thef push buttons to the LEDs, which you have used in the previous exercises.
+You should notice that the use of *delay* creates a lag in response. So empty looping is not such a great solution.

@@ -135,6 +135,12 @@
     </ToolchainSettings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="delay.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="delay.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="gpio.c">
       <SubType>compile</SubType>
     </Compile>
