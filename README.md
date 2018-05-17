@@ -13,10 +13,7 @@ It is only at the end of the course that we introduce micro controllers and syst
 
 The text below this line in this README file is updated with each commit to enable a student to navigate rapidly between the diffent branch and commits.
 
-This version of the code introduce local includes (#include "") with header file and code file.
+# Version's aim
+This commit is where we start to branch out.
 
 ## Exercises
-- Notice that you can turn on different lights at anytime.
-- Connect different buttons to different lights.
-- Connect several lights to one button.
-- Turn the code in the while(1) block into a function.
