@@ -14,6 +14,12 @@ It is only at the end of the course that we introduce micro controllers and syst
 The text below this line in this README file is updated with each commit to enable a student to navigate rapidly between the diffent branch and commits.
 
 # Version's aim
-This commit is where we start to branch out.
+This version of the software uses external interrupts to tigger a reaction from the micro-controller.
+This avoids delays in the case of some other code being executed and having to poll an input to see if an input state has changed.
+
+Since only one interrupt is used for all the buttons (via OR gates) only the first button is detected.
 
 ## Exercises
+- Use a breakpoint to step through the code of the interrupt.
+- Insert the code for the flashing the display back light in the *while (1)* loop (and outside the *if (bToggle)*) to see that now there is no lagging of response (ref. v0.1.2).
+- What is Int4 connected to on your development board?
