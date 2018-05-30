@@ -2,28 +2,43 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: May 17, 2018
+ * Modified: May 30, 2018
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
 
-#include <avr/io.h> // input output header file for this AVR chip.
-#include "gpio.h"
-
 /*
  * Purpose of this version:
- * The purpose of this version of the software package is to introduce the idea of the include files.
- * The code is the same as that of the previous version but spread in different files.
+ * The purpose of this version of the software package is to introduce the display.
 */
 
+#include <avr/io.h> // input output header file for this AVR chip.
+#include <string.h>
+#include "global.h"
+#include "lcd.h"
+#include "gpio.h"
 
+/** This function initializes the LCD display and should be called only once before the while(1) loop in the main(). */
+int initDisplay(void)
+{
+	lcdInit();	//initialize the LCD
+	lcdClear();	//clear the LCD
+	lcdHome();	//go to the home of the LCD
+	lcdPrintData("Hello World!", 12); //Display the text on the LCD
+	PORTB |= 1 << DISPLAY_LED;	// Turn on the display's back light.
 
+	return(1);
+}
 
+/** This is the main function of our application. There is one and only one such function.
+ * The code starts executing here.
+ */
 int main(void)
 {
 	unsigned char temp ;		//Allocate memory for  temp
 	
 	temp = initGPIO();				//Set up the data direction register for both ports C and G
+	temp = initDisplay();
 	
 	while(1)
 	{

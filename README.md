@@ -14,6 +14,10 @@ It is only at the end of the course that we introduce micro controllers and syst
 The text below this line in this README file is updated with each commit to enable a student to navigate rapidly between the diffent branch and commits.
 
 # Version's aim
-This commit is where we start to branch out.
+This commit is where we start to use the LCD display.
+We here limit ourself to writing text at compile time.
 
 ## Exercises
+- Turn on and off the display's back light.
+- Use the push button S5 to turn on the display back light and S4 to turn it off.
+- Change the text you display. What happens if the new text is longer than 12 characters?
