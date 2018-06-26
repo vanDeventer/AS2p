@@ -2,14 +2,14 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: May 30, 2018
+ * Modified: June 26, 2018
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
 
 /*
  * Purpose of this version:
- * The purpose of this version of the software package is to introduce the display.
+ * The purpose of this version of the software package is to introduce arrays and ASCII.
 */
 
 #include <avr/io.h> // input output header file for this AVR chip.
@@ -17,6 +17,8 @@
 #include "global.h"
 #include "lcd.h"
 #include "gpio.h"
+
+#define DISPLAYLENGTH 16	/* number of characters on the display */
 
 /** This function initializes the LCD display and should be called only once before the while(1) loop in the main(). */
 int initDisplay(void)
@@ -27,7 +29,7 @@ int initDisplay(void)
 	lcdPrintData("Hello World!", 12); //Display the text on the LCD
 	PORTB |= 1 << DISPLAY_LED;	// Turn on the display's back light.
 
-	return(1);
+	return(0);
 }
 
 /** This is the main function of our application. There is one and only one such function.
@@ -36,9 +38,19 @@ int initDisplay(void)
 int main(void)
 {
 	unsigned char temp ;		//Allocate memory for  temp
-	
+	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
+	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
+
 	temp = initGPIO();				//Set up the data direction register for both ports C and G
 	temp = initDisplay();
+	
+	textLine[0] = 0x3A;
+	textLine[1] = 0x2D;
+	textLine[2] = 0x29;
+	textLine[3] = 'A';					/* initialize the first ASCII character to A or 0x41 */
+	textLine[4] = '\0';				/* initialize the second character to be an end of text string */
+	lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
+	lcdPrintData(textLine, strlen(textLine)); //Display the text on the LCD from where you just positioned yourself
 	
 	while(1)
 	{
