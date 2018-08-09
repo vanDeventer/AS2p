@@ -15,10 +15,7 @@ The text below this line in this README file is updated with each commit to enab
 
 # Version's aim
 This commit is where we continue to use the LCD display.
-We indroduce arrays which we fill with ASCII values to form text.
+We combine the use of external interrupts and push buttons to enter text, which we display on the LCD.
 
 ## Exercises
-- Assign different values in the *textLine* array.
-- Use letters in betwen single quotes to make it earier to write text.
-- As you step through the code, *watch* the array *textLine* as it gets populated with the values.
-- Lengthen the number of characters you display.
+- Change the length of the number of characters you display.
