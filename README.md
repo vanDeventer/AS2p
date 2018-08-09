@@ -15,7 +15,7 @@ The text below this line in this README file is updated with each commit to enab
 
 # Version's aim
 This commit is where we continue to use the LCD display.
-We combine the use of external interrupts and push buttons to enter text, which we display on the LCD.
+We now introduces the idea of states or modes: text input mode versus normal mode, selected by S5.
 
 ## Exercises
-- Change the length of the number of characters you display.
+- Draw a state diagram.

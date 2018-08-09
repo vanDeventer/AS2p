@@ -24,6 +24,7 @@
 
 volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
 volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
+volatile unsigned char textEdit = 0; // This register is a boolean that allows the input of text with the push buttons if it is not 0.
 
 /** This function sets up the External Interrupt, and specifically Interrupt 6 that is connected to the push buttons */
 int initExtInt(void)
@@ -43,7 +44,7 @@ int initDisplay(void)
 	lcdInit();	//initialize the LCD
 	lcdClear();	//clear the LCD
 	lcdHome();	//go to the home of the LCD
-	lcdPrintData("Hello World!", 12); //Display the text on the LCD
+	lcdPrintData("Text", 4); //Display the text on the LCD
 	PORTB |= 1 << DISPLAY_LED;	// Turn on the display's back light.
 
 	return(0);
@@ -56,21 +57,30 @@ unsigned int DbTEXThandler(char *s, unsigned int position)
 	{
 		case 0b10000000:			//S5 center button
 			PORTC |= 0b00000100;	//Turn on LED5
+			textEdit = !textEdit;	//Toggle the boolean textEdit
+			if (textEdit){
+				lcdGotoXY(8,0);     //Position the cursor on first line 8th position
+				lcdPrintData("input ", 6); //Clear the lower part of the LCD
+			}
+			else {
+				lcdGotoXY(8,0);     //Position the cursor on first line 8th position
+				lcdPrintData("      ", 6); //Clear the lower part of the LCD
+			}
 			break;
 		case 0b01000000:			//S4  upper button
-			if (s[position] < 'z')	// if you did not reach the ASCII letter z or 0x7A, you can go to the next letter in the table
+			if (s[position] < 'z' && textEdit)	// if you did not reach the ASCII letter z or 0x7A, you can go to the next letter in the table
 				s[position]++;
 			break;
 		case 0b00100000:			//S3 left button
-			if (position > 0) 		//If you have not reached the right side of the display, you can move the cursor one step to the right
+			if (position > 0 && textEdit) 		//If you have not reached the right side of the display, you can move the cursor one step to the right
 				position--;
 			break;
 		case 0b00010000:			//S2 lower button
-			if (s[position] > 'A')	// if you did not reach the ASCII letter A, you can go to the previous letter in the table
+			if (s[position] > 'A'  && textEdit)	// if you did not reach the ASCII letter A, you can go to the previous letter in the table
 				s[position]--;
 			break;
 		case 0b00001000:			//S1 right button
-			if (position < (DISPLAYLENGTH-1))		//If you have not reached the right side of the display with index starting at 0, you can move the cursor one step to the right
+			if (position < (DISPLAYLENGTH-1) && textEdit)		//If you have not reached the right side of the display with index starting at 0, you can move the cursor one step to the right
 			{
 				position++;
 				s[position] = 'A';
