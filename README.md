@@ -14,14 +14,16 @@ It is only at the end of the course that we introduce micro controllers and syst
 The text below this line in this README file is updated with each commit to enable a student to navigate rapidly between the diffent branch and commits.
 
 # Version's aim
-In this commit, we introduce the Analog to Digital Converter.
+In this commit, we combine the Analog to Digital Converter with the Display where we show the value.
 We use the potentiometers on the development board to change the potential of the analog signal with respect to ground.
 The user must add a wire or jumger between POT1 or POT2 to the ADC pin header.
 To know which pin to use, one must refer tot he schematic of the board.
 Initially, the code uses ADC0.
-The value is displayed using the 5 LEDs.
+The value is also displayed using the 5 LEDs.
 
 ## Exercises
+- Doest the value display makes sene? Why?
+- Display the value in Volts.
 - Reverse the order of the LEDs as a function of the analog value.
 - Change the input from ADC0 to ADC1 or ADC2.
 - Using both potentiometers, take the difference ADC1 - ADC2.

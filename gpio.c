@@ -6,9 +6,6 @@
 #include <avr/io.h> // input output header file for this AVR chip.
 #include "gpio.h"
 
-#define DISPLAY_LED PB7	// Display back light's LED is on Port B, pin 7.
-
-
 int initGPIO(void)
 {
 	//Set up input output direction on Port B, C and G
