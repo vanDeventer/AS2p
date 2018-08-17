@@ -14,16 +14,13 @@ It is only at the end of the course that we introduce micro controllers and syst
 The text below this line in this README file is updated with each commit to enable a student to navigate rapidly between the diffent branch and commits.
 
 # Version's aim
-In this commit, we introduce further the idea of states (which are enumerated). 
-We have a boot state, an ADC state and a text (input) state.
-The ADC states uses the potentiometers on the development board to change the potential of the analog signal with respect to ground.
-The user must add a wire or jumger between POT1 or POT2 to the ADC pin header.
-To know which pin to use, one must refer tot he schematic of the board.
-Initially, the code uses ADC0.
-The value is also displayed using the 5 LEDs and the background display are controlled by the ADC in all states or modes.
+In this commit, we introduce Serial Communication with the USART peripheral and enable communication with a PC via USB.
+In the new state (USART) one can stream the ADC values, echo what is typed on the PC or send the text (input) to the PC.
+The receiving of character is done with an internal interrupt.
 
 ## Exercises
-- Change the language of initial greeting.
-- Change the order of cycling (wich is only obvious at boot since you only have 3 states).
-- Add a second channel, which you could select with (S3 and S1) os S5.
-- Change the polarity of the PVM to the display.
+- Log the ADC values and plot them in MATLAB or Microsoft Excel.
+- Clean the second line of the display of previous text.
+- In the USAST uECHO mode, clear the second line if the user sends a new line (\n) or a carriage return (\r).
+- Connect two boards and communicate using USART0.
+- Can you build a null modem with USART0?

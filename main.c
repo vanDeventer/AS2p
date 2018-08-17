@@ -9,9 +9,7 @@
 
 /*
  * Purpose of this version:
- * The purpose of this version is to merge two earlier software packages to display a value of the ADC on the LCD screen
- * The value of the analog signal is displayed using the five LEDs.
- * You will need a wire or jumper connecting POT1 or POT2 and ADC0.
+ * The purpose of this version is to introduce serial communication using USART
 */
 
 #include <avr/io.h> // input output header file for this AVR chip.
@@ -21,6 +19,7 @@
 #include "global.h"
 #include "lcd.h"
 #include "gpio.h"
+#include "usart.h"
 
 #define DISPLAYLENGTH 16	/* number of characters on the display */
 #define LANG 1 // 0 for Swedish and 1 for English, an "Error" otherwise
@@ -31,16 +30,21 @@
 #else
 	#define GREETING "Error"
 #endif
-#define DTOP DTEXT /* this needs to be updated when new states are added to enumeration of dState */
+#define DTOP DUART /* this needs to be updated when new states are added to enumeration of dState */
 
 enum dStates {DBOOT, DADC, DTEXT, DUART, DSPI, DI2C, DCAN};	/* enumeration of states (C programming, p) */
-enum subMode {NORMAL, TEDIT, UECHO};
-char *dbStateName[] = {GREETING, "ADC", "Text", "USART"}; /* initialization of Pointer Array (C programming, p113) */	
+char *dbStateName[] = {GREETING, "ADC", "Text", "USART"}; /* initialization of Pointer Array (C programming, p113) */
+enum uartModes {UADC, UECHO, UTEXT};	
 volatile unsigned int dbState;		/* display's state (activated by buttons)*/
+volatile unsigned int uartMode;
 volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
 volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
 volatile unsigned char textEdit= 0;	// Boolean to enable text editing.
 volatile uint16_t adc_value;  //Allocate the double byte memory space into which the result of the 10 bits Analog to Digital Converter (ADC) is stored.
+volatile char *echoString;	// allocate memory for the pointer to string array for the USART echo mode
+volatile int uCursor = 0;		// USART cursor in echo mode
+
+
 
 int initADC(){
 	//Set up analog to digital conversion (ADC)
@@ -218,25 +222,61 @@ unsigned int DbTEXThandler(char *s, unsigned int position)
 	return position;
 }
 
+int DbUSARThandler(void)
+{
+	switch(buttons & 0b11111000){
+		case 0b10000000:			//S5 center button
+			uartMode = UECHO;
+			lcdGotoXY(10, 0);     //Position the cursor on
+			lcdPrintData("uEcho", 5); //Inform the user of edit mode in upper right part of the LCD
+			break;
+		case 0b01000000:			//S4  upper button
+			dbStateUp();
+			break;
+		case 0b00100000:			//S3 left button
+			uartMode = UADC;
+			lcdGotoXY(10, 0);     //Position the cursor on
+			lcdPrintData("uADC ", 5); //Inform the user of edit mode in upper right part of the LCD
+			break;
+		case 0b00010000:			//S2 lower button
+			dbStateDown();
+			break;
+		case 0b00001000:			//S1 right button
+			uartMode = UTEXT;
+			lcdGotoXY(10, 0);     //Position the cursor on
+			lcdPrintData("uSend", 5); //Inform the user of edit mode in upper right part of the LCD
+			break;
+		default:
+			/* button released, do nothing */
+			break;
+	}
+	return 0;
+}
+
 /** This is the main function of our application. There is one and only one such function.
  * The code starts executing here.
  */
 int main(void)
 {
 	unsigned char temp ;		//Allocate memory for  temp
- 	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
+ 	int cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
 	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
 	char text[10];				//Allocate an array of 10 bytes to store text
+	char uString[DISPLAYLENGTH +1];	// allocate memory for string array for the USART echo mode
 	uint16_t adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts
 	
+	echoString = uString;	//let the pointer point to the beginning of the text string used in the echo mode
 	textLine[0] = 'A';				/* initialize the first ASCII character to A or 0x41 */
 	textLine[1] = '\0';				/* initialize the second character to be an end of text string */
+	uString[0] = '\0';	//initialize the first character of the USART string to be an end of text character */
 
 	temp = initGPIO();		//Set up the data direction register for both ports B, C and G
 	temp = initDisplay();	//Set up the display
 	temp = initExtInt();	//Set up the external interrupt for the push buttons
 	temp = initADC();		// Setup the Analog to Digital Converter
 	TimerCounter0setup(128);// enable the dimming of the display backlight with PWM using TimerCounter 0 and pin OCR0
+	usart1_init(51);		//Initialize USART 1 with BAUDRATE_19200 (look at page s183 and 203)
+	uartMode = 5;		// this number is outside the enumeration list
 	
 	ADCSRA |= (1<<ADSC);	//Start ADC
 	sei();					// Set Global Interrupts
@@ -285,6 +325,8 @@ int main(void)
 				case DTEXT:
 					cursor = DbTEXThandler(textLine, cursor);
 					break;
+				case DUART:
+					DbUSARThandler();
 				default:
 					break;
 			}
@@ -304,6 +346,35 @@ int main(void)
 				lcdPrintData("      ", 6); //Clear the lower part of the LCD
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				break;
+			case DUART:
+				switch (uartMode){
+					case UADC:
+						itoa(adcBuffer, text, 9);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+						lcdGotoXY(5, 1);		//Position the cursor on second line
+						lcdPrintData("      ", 6); //Clear the lower part of the LCD
+						lcdGotoXY(5, 1);		//Position the cursor on second line
+						lcdPrintData(text, strlen(text)); //Display the text on the LCD
+						usart1_sendstring(text, strlen(text));	/* transmit over USART 1 the value of the ADC */
+						usart1_transmit('\n');	// transmit a new line
+						usart1_transmit('\r');	// transmit a carriage return
+						break;
+					case UECHO:
+						lcdGotoXY(0, 1);     //Position the cursor on
+						lcdPrintData(uString, strlen(uString)); //Display the text on the LCD
+						break;
+					case UTEXT:
+						lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
+						lcdPrintData(textLine, strlen(textLine)); //Display the text on the LCD
+						usart1_sendstring(textLine, strlen(textLine));	/* transmit over USART 1 the value of the ADC */
+						usart1_transmit('\n');
+						usart1_transmit('\r');
+						break;
+					default:
+						lcdGotoXY(0, 1);     //Position the cursor on the first character of the first line
+						lcdPrintData("ADC  Echo  Text", 15); //Inform of the problem
+						break;
+				}
 				break;
 			default:
 				lcdGotoXY(0, 1);     //Position the cursor on the first character of the first line
@@ -326,4 +397,17 @@ SIGNAL(SIG_INTERRUPT6)  //Execute the following code if an INT6 interrupt has be
 ISR(ADC_vect){
 	adc_value = ADCL;		//Load the low byte of the ADC result
 	adc_value += (ADCH<<8); //shift the high byte by 8bits to put the high byte in the variable
+}
+
+ISR(USART1_RX_vect){
+	char ReceivedByte;
+	ReceivedByte = UDR1;
+	UDR1 = ReceivedByte;
+	if (uCursor < DISPLAYLENGTH){
+		echoString[uCursor] = ReceivedByte;
+		echoString[++uCursor] = '\0';
+	} else {
+		uCursor = 0;	// reset the cursor to the beginning of the line
+		echoString[uCursor] = '\0'; 
+	}
 }
