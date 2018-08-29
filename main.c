@@ -2,16 +2,16 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: August 10, 2018
+ * Modified: August 29, 2018
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
 
 /*
  * Purpose of this version:
- * The purpose of this version is to merge two earlier software packages to display a value of the ADC on the LCD screen
- * The value of the analog signal is displayed using the five LEDs.
- * You will need a wire or jumper connecting POT1 or POT2 and ADC0.
+ * The purpose of this version is to introduce SPI to enable communication between two boards.
+ * We also the dip switches to set one board as a Master and the other as Slave.
+ * The ADC value in measured on the Master and sent to the Slave when both are in SPI mode or state.
 */
 
 #include <avr/io.h> // input output header file for this AVR chip.
@@ -21,26 +21,28 @@
 #include "global.h"
 #include "lcd.h"
 #include "gpio.h"
+#include "spi.h"
 
 #define DISPLAYLENGTH 16	/* number of characters on the display */
 #define LANG 1 // 0 for Swedish and 1 for English, an "Error" otherwise
 #if LANG == 0
 	#define GREETING "Hej! "
 #elif LANG == 1
-	#define GREETING "Hello"
+	#define GREETING "Hello "
 #else
-	#define GREETING "Error"
+	#define GREETING "Error "
 #endif
-#define DTOP DTEXT /* this needs to be updated when new states are added to enumeration of dState */
+#define DTOP DSPI /* this needs to be updated when new states are added to enumeration of dState */
 
-enum dStates {DBOOT, DADC, DTEXT, DUART, DSPI, DI2C, DCAN};	/* enumeration of states (C programming, p) */
+enum dStates {DBOOT, DADC, DTEXT, DSPI, DUART, DI2C, DCAN};	/* enumeration of states (C programming, p) */
 enum subMode {NORMAL, TEDIT, UECHO};
-char *dbStateName[] = {GREETING, "ADC", "Text", "USART"}; /* initialization of Pointer Array (C programming, p113) */	
-volatile unsigned int dbState;		/* display's state (activated by buttons)*/
+int *dbStateName[] = {GREETING, "ADC", "Text", "SPI"}; /* initialization of Pointer Array (C programming, p113) */	
+volatile unsigned char dbState;		/* display's state (activated by buttons)*/
 volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
 volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
 volatile unsigned char textEdit= 0;	// Boolean to enable text editing.
 volatile uint16_t adc_value;  //Allocate the double byte memory space into which the result of the 10 bits Analog to Digital Converter (ADC) is stored.
+volatile char spiByte;	// SPI new byte
 
 int initADC(){
 	//Set up analog to digital conversion (ADC)
@@ -76,7 +78,6 @@ int initDisplay(void)
 	lcdClear();	//clear the LCD
 	lcdHome();	//go to the home of the LCD
 	lcdPrintData(GREETING, strlen(GREETING)); //Display the text on the LCD
-//	lcdPrintData("ADC 1ch!", 8); //Display the text on the LCD
 	PORTB |= 1 << DISPLAY_LED;	// Turn on the display's back light.
 	return(0);
 }
@@ -95,6 +96,33 @@ void TimerCounter0setup(int start)
 	OCR0A = start;
 }
 
+char initSPIwid(void){
+	char id; //master or slave identification number
+	
+	 //Set up input output Port E
+	 DDRE |= 0b00001100;	//Set the Port E's direction to output on the 3 least significant bits and input on the 5 higher ones
+	 PORTE |= 0b00001100;
+	 id = 0;
+	 id = (PINE & 0b0001100)>>2;
+	 id = id + 0x30;
+	 lcdPrintData(&id,1);
+	 DDRE &= 0b11110011;	//Turn off the identification pins to save power.
+	 PORTE &=0b11110011;
+	 
+	 if (id == 0x30)//setup the master
+	 {
+		 SPI_MasterInit();
+		 lcdGotoXY(4, 1);
+		 lcdPrintData("Master",6);
+	 }
+	 else //set up the slave
+	 {
+		 SPI_SlaveInit();
+		 lcdGotoXY(4, 1);
+		 lcdPrintData("Slave ",6);
+	 }
+	 return id;
+}
 
 /** This function is called when cycling up the states.*/
 int dbStateUp(void)
@@ -218,12 +246,40 @@ unsigned int DbTEXThandler(char *s, unsigned int position)
 	return position;
 }
 
+/** This function uses the push buttons to let the user change state out of the SPI state.*/
+int DbSPIhandler(void)
+{
+	switch(buttons & 0b11111000){
+		case 0b10000000:			//S5 center button
+			// do nothing
+			break;
+		case 0b01000000:			//S4  upper button
+			dbStateUp();
+			break;
+		case 0b00100000:			//S3 left button
+			// do nothing
+			break;
+		case 0b00010000:			//S2 lower button
+			dbStateDown();
+			break;
+		case 0b00001000:			//S1 right button
+			// do nothing
+			break;
+		default:
+		/* button released, do nothing */
+		break;
+	}
+	return 0;
+}
+
+
 /** This is the main function of our application. There is one and only one such function.
  * The code starts executing here.
  */
 int main(void)
 {
-	unsigned char temp ;		//Allocate memory for  temp
+	int temp ;		//Allocate memory for  temp
+	char id;	// master or slave id number;
  	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
 	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
 	char text[10];				//Allocate an array of 10 bytes to store text
@@ -237,6 +293,8 @@ int main(void)
 	temp = initExtInt();	//Set up the external interrupt for the push buttons
 	temp = initADC();		// Setup the Analog to Digital Converter
 	TimerCounter0setup(128);// enable the dimming of the display backlight with PWM using TimerCounter 0 and pin OCR0
+	
+	id = initSPIwid();		// SPI board identification (0 = master, 1,2 and 3 are slaves)
 	
 	ADCSRA |= (1<<ADSC);	//Start ADC
 	sei();					// Set Global Interrupts
@@ -285,6 +343,9 @@ int main(void)
 				case DTEXT:
 					cursor = DbTEXThandler(textLine, cursor);
 					break;
+				case DSPI:
+					DbSPIhandler();
+					break;
 				default:
 					break;
 			}
@@ -299,11 +360,31 @@ int main(void)
 				lcdPrintData(textLine, strlen(textLine)); //Display the text on the LCD
 				break;
 			case DADC:
-				itoa(adcBuffer, text, 9);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+				itoa(adcBuffer, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
 				lcdGotoXY(5, 1);     //Position the cursor on
-				lcdPrintData("      ", 6); //Clear the lower part of the LCD
+				lcdPrintData("        ", 8); //Clear the lower part of the LCD
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				break;
+			case DSPI:
+				 if (id == 0x30)//send as the master
+				 {
+					temp = adcBuffer >> 2;
+					SPI_MasterTransmit(temp);
+					utoa(temp, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+					lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
+					lcdPrintData("      ", 6); //Clear the lower part of the LCD
+					lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
+					lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				 } 
+				else //receive as slave
+				 {
+					itoa(spiByte, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+					lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
+					lcdPrintData("      ", 6); //Clear the lower part of the LCD
+					lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
+					lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				 }
 				break;
 			default:
 				lcdGotoXY(0, 1);     //Position the cursor on the first character of the first line
@@ -326,4 +407,8 @@ SIGNAL(SIG_INTERRUPT6)  //Execute the following code if an INT6 interrupt has be
 ISR(ADC_vect){
 	adc_value = ADCL;		//Load the low byte of the ADC result
 	adc_value += (ADCH<<8); //shift the high byte by 8bits to put the high byte in the variable
+}
+
+SIGNAL(SPI_STC_vect) {		//interrupt from SPI
+	spiByte = SPDR;	// Read - and store incoming byte
 }
