@@ -2,7 +2,7 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: August 10, 2018
+ * Modified: September 5, 2018
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
@@ -14,8 +14,8 @@
  * You will need a wire or jumper connecting POT1 or POT2 and ADC0.
 */
 
-#include <avr/io.h> // input output header file for this AVR chip.
 #include <string.h>
+#include <avr/io.h> // input output header file for this AVR chip.
 #include <avr/pgmspace.h>	// Contains some type definitions and functions.
 #include <avr/interrupt.h>	// Contains ISR (Interrupt Service Routines) or interrupt handler details
 #include "global.h"
@@ -299,7 +299,7 @@ int main(void)
 				lcdPrintData(textLine, strlen(textLine)); //Display the text on the LCD
 				break;
 			case DADC:
-				itoa(adcBuffer, text, 9);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+				itoa(adcBuffer, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData("      ", 6); //Clear the lower part of the LCD
 				lcdGotoXY(5, 1);     //Position the cursor on
