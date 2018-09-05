@@ -9,11 +9,15 @@
 
 /*
  * Purpose of this version:
- * The purpose of this version is to introduce SPI to enable communication between two boards.
- * We also the dip switches to set one board as a Master and the other as Slave.
- * The ADC value in measured on the Master and sent to the Slave when both are in SPI mode or state.
+ * The purpose of this version is to use SPI to communicate with the on board accelerometer chip.
+ * This code is an example to use the 3D accelerometer found on the lower right of the board.
+ * MMA7455L Freescale +-2g/4g/8g Three Axis Low-g Digital Output Accelerometer
+ *
+ * This code requires 1 jumper for the chip select.
+ * We also the idea of structures to group related variables
 */
 
+#include <stdio.h>
 #include <avr/io.h> // input output header file for this AVR chip.
 #include <string.h>
 #include <avr/pgmspace.h>	// Contains some type definitions and functions.
@@ -24,19 +28,12 @@
 #include "spi.h"
 
 #define DISPLAYLENGTH 16	/* number of characters on the display */
-#define LANG 1 // 0 for Swedish and 1 for English, an "Error" otherwise
-#if LANG == 0
-	#define GREETING "Hej! "
-#elif LANG == 1
-	#define GREETING "Hello "
-#else
-	#define GREETING "Error "
-#endif
+#define GREETING "Hello "
 #define DTOP DSPI /* this needs to be updated when new states are added to enumeration of dState */
 
 enum dStates {DBOOT, DADC, DTEXT, DSPI, DUART, DI2C, DCAN};	/* enumeration of states (C programming, p) */
 enum subMode {NORMAL, TEDIT, UECHO};
-int *dbStateName[] = {GREETING, "ADC", "Text", "SPI"}; /* initialization of Pointer Array (C programming, p113) */	
+int *dbStateName[] = {GREETING, "ADC", "Text", "X     Y     Z"}; /* initialization of Pointer Array (C programming, p113) */	
 volatile unsigned char dbState;		/* display's state (activated by buttons)*/
 volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
 volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
@@ -96,33 +93,6 @@ void TimerCounter0setup(int start)
 	OCR0A = start;
 }
 
-char initSPIwid(void){
-	char id; //master or slave identification number
-	
-	 //Set up input output Port E
-	 DDRE |= 0b00001100;	//Set the Port E's direction to output on the 3 least significant bits and input on the 5 higher ones
-	 PORTE |= 0b00001100;
-	 id = 0;
-	 id = (PINE & 0b0001100)>>2;
-	 id = id + 0x30;
-	 lcdPrintData(&id,1);
-	 DDRE &= 0b11110011;	//Turn off the identification pins to save power.
-	 PORTE &=0b11110011;
-	 
-	 if (id == 0x30)//setup the master
-	 {
-		 SPI_MasterInit();
-		 lcdGotoXY(4, 1);
-		 lcdPrintData("Master",6);
-	 }
-	 else //set up the slave
-	 {
-		 SPI_SlaveInit();
-		 lcdGotoXY(4, 1);
-		 lcdPrintData("Slave ",6);
-	 }
-	 return id;
-}
 
 /** This function is called when cycling up the states.*/
 int dbStateUp(void)
@@ -279,11 +249,12 @@ int DbSPIhandler(void)
 int main(void)
 {
 	int temp ;		//Allocate memory for  temp
-	char id;	// master or slave id number;
  	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
 	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
 	char text[10];				//Allocate an array of 10 bytes to store text
 	uint16_t adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts
+	accelSPI axel3D;	// allocate the memory for the 3D accelerometer structure
+	char cl[5];		// allocate the memory for the string text
 	
 	textLine[0] = 'A';				/* initialize the first ASCII character to A or 0x41 */
 	textLine[1] = '\0';				/* initialize the second character to be an end of text string */
@@ -294,7 +265,13 @@ int main(void)
 	temp = initADC();		// Setup the Analog to Digital Converter
 	TimerCounter0setup(128);// enable the dimming of the display backlight with PWM using TimerCounter 0 and pin OCR0
 	
-	id = initSPIwid();		// SPI board identification (0 = master, 1,2 and 3 are slaves)
+	// Set up SPI and accelerometer
+	SPI_MasterInit();
+	SPI_MasterTransmit(0b10101100,0b00000101); //accelerometer initialization
+	// Write at address, 0x16 = 0b00010110 shifted one to the left and the MSB is 1 to write
+	// --,DRPD,SPI3W,STON,GLVL[1],GLVL[0],MODE[1],MODE[0]
+	// GLVL [1:0] --> 0 1 --> 2g range, 64 LSB/g
+	// MODE [1:0] --> 0 1 --> measurement mode
 	
 	ADCSRA |= (1<<ADSC);	//Start ADC
 	sei();					// Set Global Interrupts
@@ -359,32 +336,36 @@ int main(void)
 				lcdGotoXY(0, 1);     //Position the cursor on
 				lcdPrintData(textLine, strlen(textLine)); //Display the text on the LCD
 				break;
-			case DADC:
+			case DADC:	
 				itoa(adcBuffer, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
-				lcdGotoXY(5, 1);     //Position the cursor on
-				lcdPrintData("        ", 8); //Clear the lower part of the LCD
+ 				lcdGotoXY(5, 1);     //Position the cursor on
+ 				lcdPrintData("        ", 8); //Clear the lower part of the LCD
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData(text, strlen(text)); //Display the text on the LCD
 				break;
 			case DSPI:
-				 if (id == 0x30)//send as the master
-				 {
-					temp = adcBuffer >> 2;
-					SPI_MasterTransmit(temp);
-					utoa(temp, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
-					lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
-					lcdPrintData("      ", 6); //Clear the lower part of the LCD
-					lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
-					lcdPrintData(text, strlen(text)); //Display the text on the LCD
-				 } 
-				else //receive as slave
-				 {
-					itoa(spiByte, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
-					lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
-					lcdPrintData("      ", 6); //Clear the lower part of the LCD
-					lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
-					lcdPrintData(text, strlen(text)); //Display the text on the LCD
-				 }
+				axel3D = acc(); // get the new averages of x, y and z from the accelerometer
+							
+				utoa(axel3D.x, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"				
+				lcdGotoXY(0, 1);     //Position the cursor on
+				lcdPrintData("    ", 4); //Clear part of the lower part of the LCD
+				lcdGotoXY(0, 1);     //Position the cursor
+				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				
+				utoa(axel3D.y, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"				
+				lcdGotoXY(6, 1);     //Position the cursor on
+				lcdPrintData("    ", 4); //Clear part of the lower part of the LCD
+				lcdGotoXY(6, 1);     //Position the cursor on
+				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+								
+				utoa(axel3D.z, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"				
+				lcdGotoXY(12, 1);     //Position the cursor on
+				lcdPrintData("    ", 4); //Clear part of the lower part of the LCD
+				lcdGotoXY(12, 1);     //Position the cursor
+				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+												
+				//if (axel.value & 0x80)// if value is negative (can be corrected with two's complement (~axel3D.value)+1) [value is x, y or z]
+		
 				break;
 			default:
 				lcdGotoXY(0, 1);     //Position the cursor on the first character of the first line
