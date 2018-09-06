@@ -9,9 +9,9 @@
 
 /*
  * Purpose of this version:
- * The purpose of this version is to merge two earlier software packages to display a value of the ADC on the LCD screen
- * The value of the analog signal is displayed using the five LEDs.
- * You will need a wire or jumper connecting POT1 or POT2 and ADC0.
+ * The purpose of this version is to use the accelerometer on the red development board (version 3).
+ * The measured acceleration are in double bytes and transmitted over SPI.
+ * The board also has a 3D Gyroscope, which also communicates over SPI and needs another Chip Select.
 */
 
 #include <string.h>
@@ -21,21 +21,13 @@
 #include "global.h"
 #include "lcd.h"
 #include "gpio.h"
+#include "spi.h"
 
 #define DISPLAYLENGTH 16	/* number of characters on the display */
-#define LANG 1 // 0 for Swedish and 1 for English, an "Error" otherwise
-#if LANG == 0
-	#define GREETING "Hej! "
-#elif LANG == 1
-	#define GREETING "Hello"
-#else
-	#define GREETING "Error"
-#endif
-#define DTOP DTEXT /* this needs to be updated when new states are added to enumeration of dState */
+#define DTOP DSPI /* this needs to be updated when new states are added to enumeration of dState */
 
-enum dStates {DBOOT, DADC, DTEXT, DUART, DSPI, DI2C, DCAN};	/* enumeration of states (C programming, p) */
-enum subMode {NORMAL, TEDIT, UECHO};
-char *dbStateName[] = {GREETING, "ADC", "Text", "USART"}; /* initialization of Pointer Array (C programming, p113) */	
+enum dStates {DBOOT, DADC, DTEXT, DSPI};	/* enumeration of states (C programming, p) */
+char *dbStateName[] = {"Automotive Sys", "ADC", "Text", "Accel X Y Z"}; /* initialization of Pointer Array (C programming, p113) */	
 volatile unsigned int dbState;		/* display's state (activated by buttons)*/
 volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
 volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
@@ -75,8 +67,7 @@ int initDisplay(void)
 	lcdInit();	//initialize the LCD
 	lcdClear();	//clear the LCD
 	lcdHome();	//go to the home of the LCD
-	lcdPrintData(GREETING, strlen(GREETING)); //Display the text on the LCD
-//	lcdPrintData("ADC 1ch!", 8); //Display the text on the LCD
+	lcdPrintData(dbStateName[dbState], strlen(dbStateName[dbState])); //Display the text on the LCD
 	PORTB |= 1 << DISPLAY_LED;	// Turn on the display's back light.
 	return(0);
 }
@@ -218,17 +209,45 @@ unsigned int DbTEXThandler(char *s, unsigned int position)
 	return position;
 }
 
+/** This function uses the push buttons to let the user change state out of the SPI state.*/
+int DbSPIhandler(void)
+{
+	switch(buttons & 0b11111000){
+		case 0b10000000:			//S5 center button
+		// do nothing
+		break;
+		case 0b01000000:			//S4  upper button
+		dbStateUp();
+		break;
+		case 0b00100000:			//S3 left button
+		// do nothing
+		break;
+		case 0b00010000:			//S2 lower button
+		dbStateDown();
+		break;
+		case 0b00001000:			//S1 right button
+		// do nothing
+		break;
+		default:
+		/* button released, do nothing */
+		break;
+	}
+	return 0;
+}
+
+
 /** This is the main function of our application. There is one and only one such function.
  * The code starts executing here.
  */
 int main(void)
 {
-	unsigned char temp ;		//Allocate memory for  temp
- 	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
+	char temp ;		//Allocate memory for  temp
+	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
 	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
 	char text[10];				//Allocate an array of 10 bytes to store text
 	uint16_t adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts
-	
+	accelSPI axel3D;			// allocate the memory for the 3D accelerometer structure
+
 	textLine[0] = 'A';				/* initialize the first ASCII character to A or 0x41 */
 	textLine[1] = '\0';				/* initialize the second character to be an end of text string */
 
@@ -236,7 +255,14 @@ int main(void)
 	temp = initDisplay();	//Set up the display
 	temp = initExtInt();	//Set up the external interrupt for the push buttons
 	temp = initADC();		// Setup the Analog to Digital Converter
+	
 	TimerCounter0setup(128);// enable the dimming of the display backlight with PWM using TimerCounter 0 and pin OCR0
+	SPI_MasterInit();
+	//Configure accelerometer
+	spiWriteByte(&PORTB, (1<<DD_SS),0x20,0b00100111);	// CTRL_REG_1: PM2[0], PM1[0], PM0[1], DR0[0], DR1[0], ZEN[1], YEN[1], XEN[1]
+//	spiWriteByte(&PORTB, (1<<DD_SS),0x22,0b00000011);	// CTRL_REG_3: IHL[0], PP_OD[0], LIR2[0], I2_CFG1[0], I2_CFG0[0], LIR1[0], I1_CFG1[1], I1_CFG0[1]
+	spiWriteByte(&PORTB, (1<<DD_SS),0x23,0b00000010);	// CTRL_REG_4: DEFAULT, self test ST [1], SIM[0].
+	
 	
 	ADCSRA |= (1<<ADSC);	//Start ADC
 	sei();					// Set Global Interrupts
@@ -285,6 +311,9 @@ int main(void)
 				case DTEXT:
 					cursor = DbTEXThandler(textLine, cursor);
 					break;
+				case DSPI:
+					DbSPIhandler();
+					break;
 				default:
 					break;
 			}
@@ -303,6 +332,16 @@ int main(void)
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData("      ", 6); //Clear the lower part of the LCD
 				lcdGotoXY(5, 1);     //Position the cursor on
+				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				break;
+			case DSPI:
+				axel3D.x = spiReadWord(&PORTB, (1<<DD_SS),0x28);
+				axel3D.y = spiReadWord(&PORTB, (1<<DD_SS),0x2A);
+				axel3D.z = spiReadWord(&PORTB, (1<<DD_SS),0x2C);
+				lcdGotoXY(0, 1);     //Position the cursor on
+				lcdPrintData("       ", 7); //Clear the lower part of the LCD
+				itoa(axel3D.x, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+				lcdGotoXY(1, 1);     //Position the cursor on
 				lcdPrintData(text, strlen(text)); //Display the text on the LCD
 				break;
 			default:
