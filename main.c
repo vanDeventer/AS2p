@@ -2,18 +2,17 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: September 5, 2018
+ * Modified: September 10, 2018
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
 
 /*
  * Purpose of this version:
- * The purpose of this version is to merge two earlier software packages to display a value of the ADC on the LCD screen
- * The value of the analog signal is displayed using the five LEDs.
- * You will need a wire or jumper connecting POT1 or POT2 and ADC0.
+ * The purpose of this version is to introduce the I2C or TWI serial communication using the LM77 temperature chip on the board.
 */
 
+#include <stdio.h>
 #include <string.h>
 #include <avr/io.h> // input output header file for this AVR chip.
 #include <avr/pgmspace.h>	// Contains some type definitions and functions.
@@ -23,19 +22,12 @@
 #include "gpio.h"
 
 #define DISPLAYLENGTH 16	/* number of characters on the display */
-#define LANG 1 // 0 for Swedish and 1 for English, an "Error" otherwise
-#if LANG == 0
-	#define GREETING "Hej! "
-#elif LANG == 1
-	#define GREETING "Hello"
-#else
-	#define GREETING "Error"
-#endif
-#define DTOP DTEXT /* this needs to be updated when new states are added to enumeration of dState */
+#define DTOP DI2C /* this needs to be updated when new states are added to enumeration of dState */
+#define LM77_ADDR	0x48 // I2C address of the LM77 temperature sensor
 
-enum dStates {DBOOT, DADC, DTEXT, DUART, DSPI, DI2C, DCAN};	/* enumeration of states (C programming, p) */
+enum dStates {DBOOT, DADC, DTEXT, DI2C};	/* enumeration of states (C programming, p) */
 enum subMode {NORMAL, TEDIT, UECHO};
-char *dbStateName[] = {GREETING, "ADC", "Text", "USART"}; /* initialization of Pointer Array (C programming, p113) */	
+char *dbStateName[] = {"Auto Sys 2", "ADC", "Text", "I2C"}; /* initialization of Pointer Array (C programming, p113) */	
 volatile unsigned int dbState;		/* display's state (activated by buttons)*/
 volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
 volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
@@ -75,8 +67,7 @@ int initDisplay(void)
 	lcdInit();	//initialize the LCD
 	lcdClear();	//clear the LCD
 	lcdHome();	//go to the home of the LCD
-	lcdPrintData(GREETING, strlen(GREETING)); //Display the text on the LCD
-//	lcdPrintData("ADC 1ch!", 8); //Display the text on the LCD
+	lcdPrintData(dbStateName[dbState], strlen(dbStateName[dbState])); //Display the text on the LCD
 	PORTB |= 1 << DISPLAY_LED;	// Turn on the display's back light.
 	return(0);
 }
@@ -93,6 +84,14 @@ void TimerCounter0setup(int start)
 
 	//Setup output compare register A
 	OCR0A = start;
+}
+
+/** This function initializes the I2C clock */
+void setupTWI()
+{
+	//Setting up TWI baud rate to 100kHz
+	TWBR = 72;		//Look at formula on page 210;
+	TWSR &= ~(1<<TWPS1) & ~(1<<TWPS0); //With no pre-scaler
 }
 
 
@@ -218,25 +217,65 @@ unsigned int DbTEXThandler(char *s, unsigned int position)
 	return position;
 }
 
+/** This function uses the push buttons to let the user to change states I2C.*/
+int DbTWIThandler(void)
+{
+	switch(buttons & 0b11111000){
+		case 0b10000000:			//S5 center button
+		/* do nothing */
+		break;
+		case 0b01000000:			//S4  upper button
+		dbStateUp();
+		break;
+		case 0b00100000:			//S3 left button
+		/* do nothing */
+		break;
+		case 0b00010000:			//S2 lower button
+		dbStateDown();
+		break;
+		case 0b00001000:			//S1 right button
+		/* do nothing */
+		break;
+		default:
+		/* button released, do nothing */
+		break;
+	}
+	return 0;
+}
+
+void error(unsigned char val)
+{
+	unsigned char text[16];
+	sprintf(text,"Error: 0x%02X",val);
+	lcdGotoXY(0,1);
+	lcdPrintData(text, strlen(text)); //Display the text on the LCD
+}
+
+
 /** This is the main function of our application. There is one and only one such function.
  * The code starts executing here.
  */
 int main(void)
 {
-	unsigned char temp ;		//Allocate memory for  temp
+	char temp, tempLow ;		//Allocate memory for  temp and temp2
  	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
+	char debug;				//debug byte to look at the TWI status register code
+	int adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts
+	int temperature;		// Allocate a word for the temperature
+	float curr_temp = 0;		// Floating type memory allocation for the temperature
+
 	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
-	char text[10];				//Allocate an array of 10 bytes to store text
-	uint16_t adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts
+	char text[DISPLAYLENGTH + 1];				//Allocate an array of 10 bytes to store text
 	
 	textLine[0] = 'A';				/* initialize the first ASCII character to A or 0x41 */
 	textLine[1] = '\0';				/* initialize the second character to be an end of text string */
 
-	temp = initGPIO();		//Set up the data direction register for both ports B, C and G
-	temp = initDisplay();	//Set up the display
-	temp = initExtInt();	//Set up the external interrupt for the push buttons
-	temp = initADC();		// Setup the Analog to Digital Converter
+	initGPIO();		//Set up the data direction register for both ports B, C and G
+	initDisplay();	//Set up the display
+	initExtInt();	//Set up the external interrupt for the push buttons
+	initADC();		// Setup the Analog to Digital Converter
 	TimerCounter0setup(128);// enable the dimming of the display backlight with PWM using TimerCounter 0 and pin OCR0
+	setupTWI();
 	
 	ADCSRA |= (1<<ADSC);	//Start ADC
 	sei();					// Set Global Interrupts
@@ -285,6 +324,9 @@ int main(void)
 				case DTEXT:
 					cursor = DbTEXThandler(textLine, cursor);
 					break;
+				case DI2C:
+					DbTWIThandler();
+					break;
 				default:
 					break;
 			}
@@ -303,6 +345,61 @@ int main(void)
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData("      ", 6); //Clear the lower part of the LCD
 				lcdGotoXY(5, 1);     //Position the cursor on
+				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				break;
+			case DI2C:
+				//Master receive mode, follow instruction on page 222 of the AT90CAN128 Data sheet
+				//Send start condition
+				TWCR = (1<<TWINT) | (1<<TWSTA) | (1<<TWEN);
+				//Wait for TWINT flag to be set (Start has been transmitted)
+				while ( !(TWCR & (1<<TWINT)));
+				//Check the value of the TWI status register, making the pre-scaler
+				debug = TWSR;
+				if ((debug & 0xF8) != 0x08)	//We are master of the bus
+					error(debug & 0xF8);
+
+				//Load LM77 address to TWI data register
+				TWDR = ((LM77_ADDR << 1)| 0x01 ); //Shift the 7 bit address while or-ing it with the read bit
+				TWCR = (1 << TWINT) | (1 << TWEN); //Clear TWINT to start the transmission
+				 while (!(TWCR & (1<<TWINT)));  //Wait for TWINT flag to be set which indicates that the address was sent and acknowledged
+				debug = TWSR;
+				if ((debug & 0xF8) != 0x40)  //SLA+R has been sent and acknowledge has been received
+					error(debug & 0xF8);
+
+				TWCR = (1 << TWINT) | (1 << TWEN) | (1<<TWEA); //Clear TWINT to start the reception of the first byte
+				//enable acknowledge for the first byte.
+				while (!(TWCR & (1<<TWINT)));  //Wait for TWINT flag to be set which indicates that the address was sent and acknowledged
+				debug = TWSR;
+				if ((debug & 0xF8) != 0x50)  //Data byte has been received and ACK has been sent
+					error(debug & 0xF8);
+				temp = TWDR; //High byte (D15-D8)
+
+				TWCR = (1 << TWINT) | (1 << TWEN) ; //Clear TWINT to start the reception of the second byte
+				while (!(TWCR & (1<<TWINT)));  //Wait for TWINT flag to be set which indicates that the address was sent and acknowledged
+				debug = TWSR;
+				if ((debug & 0xF8) != 0x58)  //Look for an acknowledgment from the LM77
+					error(debug & 0xF8);
+				tempLow = TWDR;		// Low byte (D7-D0)
+
+				//Transmit STOP condition
+				TWCR = (1<<TWINT) | (1<<TWEN) | (1<<TWSTO);
+
+				tempLow = (tempLow>>3) | ((temp & 0x07)<<5);	// The lower 3 bits of the least significant byte do not refer to the temperature. We shift them out and need to bring in bits from the MSB
+				temp = (temp >> 3);	
+				temperature = (temp << 8) | tempLow;
+				
+
+				if (temperature & 0x200)
+				{
+					temperature = !temperature + 1;	// two's complement
+					curr_temp = temperature * (-0.5f);
+				}
+				else
+					curr_temp = temperature * (0.5f);
+
+				//Copy the temperature into the display[0] 16 byte character buffer
+				sprintf(text,"Temp: %.1fC", curr_temp);
+				lcdGotoXY(0,1);
 				lcdPrintData(text, strlen(text)); //Display the text on the LCD
 				break;
 			default:
