@@ -9,9 +9,11 @@
 
 /*
  * Purpose of this version:
- * The purpose of this version is to merge two earlier software packages to display a value of the ADC on the LCD screen
- * The value of the analog signal is displayed using the five LEDs.
- * You will need a wire or jumper connecting POT1 or POT2 and ADC0.
+ * The purpose of this version is to demonstrate the use of the servo motor
+ * Development board wiring: JP11.INT4  (OC3B) to white wire (IO) on the motor
+ * 							JP14: VCC to red wire, JP14: GND to black wire
+ *  The 16 bit Timer/Counter 3 is here used with Channel OCRB being used in phase and frequency correct mode
+ *  Button S1 increases the high time and button S3 decreases the high time while S5 returns it to the centered position
 */
 
 #include <string.h>
@@ -23,24 +25,16 @@
 #include "gpio.h"
 
 #define DISPLAYLENGTH 16	/* number of characters on the display */
-#define LANG 1 // 0 for Swedish and 1 for English, an "Error" otherwise
-#if LANG == 0
-	#define GREETING "Hej! "
-#elif LANG == 1
-	#define GREETING "Hello"
-#else
-	#define GREETING "Error"
-#endif
-#define DTOP DTEXT /* this needs to be updated when new states are added to enumeration of dState */
+#define DTOP DSERVO /* this needs to be updated when new states are added to enumeration of dState */
 
-enum dStates {DBOOT, DADC, DTEXT, DUART, DSPI, DI2C, DCAN};	/* enumeration of states (C programming, p) */
-enum subMode {NORMAL, TEDIT, UECHO};
-char *dbStateName[] = {GREETING, "ADC", "Text", "USART"}; /* initialization of Pointer Array (C programming, p113) */	
+enum dStates {DBOOT, DADC, DTEXT, DSERVO};	/* enumeration of states (C programming, p) */
+char *dbStateName[] = {"Auto Sys Servo", "ADC", "Text", "Servo"}; /* initialization of Pointer Array (C programming, p113) */	
 volatile unsigned int dbState;		/* display's state (activated by buttons)*/
 volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
 volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
 volatile unsigned char textEdit= 0;	// Boolean to enable text editing.
 volatile uint16_t adc_value;  //Allocate the double byte memory space into which the result of the 10 bits Analog to Digital Converter (ADC) is stored.
+volatile int pWidth; // Pulse width for the servo motor on Timer Counter 3
 
 int initADC(){
 	//Set up analog to digital conversion (ADC)
@@ -75,8 +69,7 @@ int initDisplay(void)
 	lcdInit();	//initialize the LCD
 	lcdClear();	//clear the LCD
 	lcdHome();	//go to the home of the LCD
-	lcdPrintData(GREETING, strlen(GREETING)); //Display the text on the LCD
-//	lcdPrintData("ADC 1ch!", 8); //Display the text on the LCD
+	lcdPrintData(dbStateName[dbState], strlen(dbStateName[dbState])); //Display the text on the LCD
 	PORTB |= 1 << DISPLAY_LED;	// Turn on the display's back light.
 	return(0);
 }
@@ -95,6 +88,27 @@ void TimerCounter0setup(int start)
 	OCR0A = start;
 }
 
+void TimerCounter3setup(void)
+{
+	// The timing of the motor to be centered is 20ms periodicity and 1.5 ms high.
+	// at 16MHz, this is over 800 million count and we have on 65535 in a 16 bit counter.
+	// a pre-scaler is needed. With a f/64, we get 250 kHz or 262 ms per max overflow.
+	
+	//Setup pre-scaller for timer counter 3.
+	TCCR3B |= (0<<CS32) | (1<<CS31) | (1<<CS30);  //Source clock IO, /64. (Note ORing with 0 does not clear the bit)
+
+	//Setup mode on Timer counter 3 to CTC
+	TCCR3B |= (1<<WGM33) | (0<<WGM32);
+	TCCR3A |= (0<<WGM31) | (0<<WGM30); // (Note ORing with 0 does not clear the bit)
+
+	//Set OC3B on compare match when counting up and clear on Top
+	TCCR3A |= (1<<COM3B1) | (0<<COM3B0);
+
+	//Setup output compare register A
+	pWidth = 188; // 1.5 ms
+	OCR3B = pWidth; //
+	ICR3 = 2500; // 20ms * 250 kH is the number of clock cycles/prescaler /2 for phase correct
+}
 
 /** This function is called when cycling up the states.*/
 int dbStateUp(void)
@@ -218,6 +232,56 @@ unsigned int DbTEXThandler(char *s, unsigned int position)
 	return position;
 }
 
+/** This function uses the push buttons to let the user to change states upon boot up.*/
+int DbServohandler(void)
+{
+	char sreg;	//Allocate a byte to hold the Status Register when updating a 16 bit variable (see text and code on page 119)
+	
+	switch(buttons & 0b11111000){
+		case 0b10000000:			//S5 center button
+			pWidth = 188;			// pulse width 188 is 21.5ms per cycle; return to center
+			cli();					//disable the interrupts and save the status register when operating on 16 variables.
+			sreg = SREG;
+			OCR3B = pWidth;			// 16 bits operation
+			SREG  = sreg;			//restore the status register and re-enable interrupts
+			sei();		
+			break;
+		case 0b01000000:			//S4  upper button
+			dbStateUp();
+			break;
+		case 0b00100000:			//S3 left button
+			if (pWidth > 94)		//If you have not reached the low side of the position decrease by 10
+			{
+				pWidth -= 10;
+				cli();
+				sreg = SREG;
+				OCR3B = pWidth;
+				SREG  = sreg;
+				sei();
+			}
+		break;
+		case 0b00010000:			//S2 lower button
+		dbStateDown();
+		break;
+		case 0b00001000:			//S1 right button
+			if (pWidth < 282)		//If you have not reached the high side of the position increase by 10
+			{
+				pWidth += 10;
+				cli();
+				sreg = SREG;
+				OCR3B = pWidth;
+				SREG  = sreg;
+				sei();
+			}
+		break;
+		default:
+		/* button released, do nothing */
+		break;
+	}
+	return 0;
+}
+
+
 /** This is the main function of our application. There is one and only one such function.
  * The code starts executing here.
  */
@@ -227,16 +291,17 @@ int main(void)
  	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
 	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
 	char text[10];				//Allocate an array of 10 bytes to store text
-	uint16_t adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts
+	int adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts	
 	
 	textLine[0] = 'A';				/* initialize the first ASCII character to A or 0x41 */
 	textLine[1] = '\0';				/* initialize the second character to be an end of text string */
 
-	temp = initGPIO();		//Set up the data direction register for both ports B, C and G
-	temp = initDisplay();	//Set up the display
-	temp = initExtInt();	//Set up the external interrupt for the push buttons
-	temp = initADC();		// Setup the Analog to Digital Converter
+	initGPIO();		//Set up the data direction register for both ports B, C and G
+	initDisplay();	//Set up the display
+	initExtInt();	//Set up the external interrupt for the push buttons
+	initADC();		// Setup the Analog to Digital Converter
 	TimerCounter0setup(128);// enable the dimming of the display backlight with PWM using TimerCounter 0 and pin OCR0
+	TimerCounter3setup();	// enable the position control of the Parallax servo motor with PWM using TimerCounter 3 and pin OCR3B JP11.INT4  (OC3B) to white wire (IO) on the motor
 	
 	ADCSRA |= (1<<ADSC);	//Start ADC
 	sei();					// Set Global Interrupts
@@ -285,6 +350,9 @@ int main(void)
 				case DTEXT:
 					cursor = DbTEXThandler(textLine, cursor);
 					break;
+				case DSERVO:
+					DbServohandler();
+					break;
 				default:
 					break;
 			}
@@ -300,6 +368,13 @@ int main(void)
 				break;
 			case DADC:
 				itoa(adcBuffer, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+				lcdGotoXY(5, 1);     //Position the cursor on
+				lcdPrintData("      ", 6); //Clear the lower part of the LCD
+				lcdGotoXY(5, 1);     //Position the cursor on
+				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				break;
+			case DSERVO:
+				itoa(pWidth, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData("      ", 6); //Clear the lower part of the LCD
 				lcdGotoXY(5, 1);     //Position the cursor on
