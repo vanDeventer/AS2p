@@ -2,16 +2,14 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: September 5, 2018
+ * Modified: September 19, 2018
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
 
 /*
  * Purpose of this version:
- * The purpose of this version is to merge two earlier software packages to display a value of the ADC on the LCD screen
- * The value of the analog signal is displayed using the five LEDs.
- * You will need a wire or jumper connecting POT1 or POT2 and ADC0.
+ * The purpose of this version is to the idea of input capture (ICP). You will need to generate a square wave connected to JP14.
 */
 
 #include <string.h>
@@ -23,24 +21,18 @@
 #include "gpio.h"
 
 #define DISPLAYLENGTH 16	/* number of characters on the display */
-#define LANG 1 // 0 for Swedish and 1 for English, an "Error" otherwise
-#if LANG == 0
-	#define GREETING "Hej! "
-#elif LANG == 1
-	#define GREETING "Hello"
-#else
-	#define GREETING "Error"
-#endif
-#define DTOP DTEXT /* this needs to be updated when new states are added to enumeration of dState */
+#define DTOP DICP /* this needs to be updated when new states are added to enumeration of dState */
 
-enum dStates {DBOOT, DADC, DTEXT, DUART, DSPI, DI2C, DCAN};	/* enumeration of states (C programming, p) */
+enum dStates {DBOOT, DADC, DTEXT, DICP};	/* enumeration of states (C programming, p) */
 enum subMode {NORMAL, TEDIT, UECHO};
-char *dbStateName[] = {GREETING, "ADC", "Text", "USART"}; /* initialization of Pointer Array (C programming, p113) */	
+char *dbStateName[] = {"AS2 with ICP", "ADC", "Text", "ICP"}; /* initialization of Pointer Array (C programming, p113) */	
 volatile unsigned int dbState;		/* display's state (activated by buttons)*/
 volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
 volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
 volatile unsigned char textEdit= 0;	// Boolean to enable text editing.
 volatile uint16_t adc_value;  //Allocate the double byte memory space into which the result of the 10 bits Analog to Digital Converter (ADC) is stored.
+volatile uint16_t curr_icp, last_icp; //Input capture register
+volatile unsigned int overflow;		// Boolean to keep track if Timer/Counter has overflown
 
 int initADC(){
 	//Set up analog to digital conversion (ADC)
@@ -75,8 +67,7 @@ int initDisplay(void)
 	lcdInit();	//initialize the LCD
 	lcdClear();	//clear the LCD
 	lcdHome();	//go to the home of the LCD
-	lcdPrintData(GREETING, strlen(GREETING)); //Display the text on the LCD
-//	lcdPrintData("ADC 1ch!", 8); //Display the text on the LCD
+	lcdPrintData(dbStateName[dbState], strlen(dbStateName[dbState])); //Display the text on the LCD
 	PORTB |= 1 << DISPLAY_LED;	// Turn on the display's back light.
 	return(0);
 }
@@ -95,6 +86,19 @@ void TimerCounter0setup(int start)
 	OCR0A = start;
 }
 
+/** This function initializes the TimerCouter1 for Input Capture of a cyclic wave.*/
+void initializeTimerCounter1(void)
+{
+	// The input capture pin is on JP14 near the relay on the development board.
+	//Page 137 or 138
+	TCCR1A = 0;				//Timer/Counter1 Control Register A is not really used
+	TCCR1B = (1<<ICNC1);	//noise canceler
+	TCCR1B |= (1<<ICES1);	//rising edge on ICP1 cause interrupt
+	TCCR1B |= (0<<CS12)| (0<<CS11)| (1<<CS10); //NO pre-scaler,
+	TIFR1 |= (1<<ICF1);		//Set input capture flag
+	TCNT1 = 0;				//Timer Counter 1
+	TIMSK1 |= (1<<ICIE1); //|(1<<TOIE1); //Timer Interrupt Mask Register,Input Capture Interrupt Enable, T/C overflow Interrupt commented out so overflow counter is not incremented
+}
 
 /** This function is called when cycling up the states.*/
 int dbStateUp(void)
@@ -223,11 +227,12 @@ unsigned int DbTEXThandler(char *s, unsigned int position)
  */
 int main(void)
 {
-	unsigned char temp ;		//Allocate memory for  temp
+	char temp ;		//Allocate memory for  temp
  	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
 	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
 	char text[10];				//Allocate an array of 10 bytes to store text
-	uint16_t adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts
+	int adcBuffer;			// Allocate the memory to hold ADC results that is not disturbed by interrupts
+	int etime;	// allocate memory for elapse time input capture events
 	
 	textLine[0] = 'A';				/* initialize the first ASCII character to A or 0x41 */
 	textLine[1] = '\0';				/* initialize the second character to be an end of text string */
@@ -237,6 +242,7 @@ int main(void)
 	temp = initExtInt();	//Set up the external interrupt for the push buttons
 	temp = initADC();		// Setup the Analog to Digital Converter
 	TimerCounter0setup(128);// enable the dimming of the display backlight with PWM using TimerCounter 0 and pin OCR0
+	initializeTimerCounter1();	// setup for input capture
 	
 	ADCSRA |= (1<<ADSC);	//Start ADC
 	sei();					// Set Global Interrupts
@@ -277,6 +283,7 @@ int main(void)
 		{
 			switch (dbState){
 				case DBOOT:
+				case DICP:
 					DbBOOThandler();
 					break;
 				case DADC:
@@ -305,6 +312,26 @@ int main(void)
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData(text, strlen(text)); //Display the text on the LCD
 				break;
+			case DICP:
+				cli();
+				if (curr_icp > last_icp)
+				{
+					etime = curr_icp - last_icp;
+				} 
+				else
+				{
+					etime = curr_icp + (65365 - last_icp);
+				}
+				sei();
+		
+				// If you used the overflow counter, you would add them here and need to reset the overflow counter.
+
+				utoa(etime, &text[0], 10);	//Convert the unsigned integer to an ascii string
+				lcdGotoXY(5, 1);				//Position the cursor on
+				lcdPrintData("      ", 6);		//Clear the lower part of the LCD
+				lcdGotoXY(5, 1);				//Position the cursor on
+				lcdPrintData(text, strlen(text)); //Display the text on the LCD
+				break;
 			default:
 				lcdGotoXY(0, 1);     //Position the cursor on the first character of the first line
 				lcdPrintData("You have a bug!", 15); //Inform of the problem
@@ -323,7 +350,21 @@ SIGNAL(SIG_INTERRUPT6)  //Execute the following code if an INT6 interrupt has be
 	buttons = PINC; //Take a snapshot of the input register of Port C where the push buttons are connected.
 }
 
+/** This function is executed every time an Analog to Digital conversion is completed. */
 ISR(ADC_vect){
 	adc_value = ADCL;		//Load the low byte of the ADC result
 	adc_value += (ADCH<<8); //shift the high byte by 8bits to put the high byte in the variable
+}
+
+/** This function is executed every time an event. */
+ISR(TIMER1_CAPT_vect)
+{
+	last_icp = curr_icp;
+	curr_icp = ICR1;
+}
+
+/** This function is executed every time Interrupt 6 is triggered. */
+ISR(TIMER1_OVF_vect)
+{
+	overflow++;
 }
