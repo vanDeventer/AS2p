@@ -2,14 +2,15 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: August 10, 2018
+ * Modified: September 21, 2018
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
 
 /*
  * Purpose of this version:
- * The purpose of this version is to introduce serial communication using USART
+ * The purpose of this version is to introduce serial communication using USART with a null modem on USART0.
+ * The point is to use the logic analyzer.
 */
 
 #include <avr/io.h> // input output header file for this AVR chip.
@@ -275,7 +276,7 @@ int main(void)
 	temp = initExtInt();	//Set up the external interrupt for the push buttons
 	temp = initADC();		// Setup the Analog to Digital Converter
 	TimerCounter0setup(128);// enable the dimming of the display backlight with PWM using TimerCounter 0 and pin OCR0
-	usart1_init(51);		//Initialize USART 1 with BAUDRATE_19200 (look at page s183 and 203)
+	usart0_init(51);		//Initialize USART 1 with BAUDRATE_19200 (look at page s183 and 203)
 	uartMode = 5;		// this number is outside the enumeration list
 	
 	ADCSRA |= (1<<ADSC);	//Start ADC
@@ -341,7 +342,7 @@ int main(void)
 				lcdPrintData(textLine, strlen(textLine)); //Display the text on the LCD
 				break;
 			case DADC:
-				itoa(adcBuffer, text, 9);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+				itoa(adcBuffer, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
 				lcdGotoXY(5, 1);     //Position the cursor on
 				lcdPrintData("      ", 6); //Clear the lower part of the LCD
 				lcdGotoXY(5, 1);     //Position the cursor on
@@ -350,14 +351,14 @@ int main(void)
 			case DUART:
 				switch (uartMode){
 					case UADC:
-						itoa(adcBuffer, text, 9);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+						itoa(adcBuffer, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
 						lcdGotoXY(5, 1);		//Position the cursor on second line
 						lcdPrintData("      ", 6); //Clear the lower part of the LCD
 						lcdGotoXY(5, 1);		//Position the cursor on second line
 						lcdPrintData(text, strlen(text)); //Display the text on the LCD
-						usart1_sendstring(text, strlen(text));	/* transmit over USART 1 the value of the ADC */
-						usart1_transmit('\n');	// transmit a new line
-						usart1_transmit('\r');	// transmit a carriage return
+						usart0_sendstring(text, strlen(text));	/* transmit over USART 1 the value of the ADC */
+						usart0_transmit('\n');	// transmit a new line
+						usart0_transmit('\r');	// transmit a carriage return
 						break;
 					case UECHO:
 						lcdGotoXY(0, 1);     //Position the cursor on
@@ -366,9 +367,9 @@ int main(void)
 					case UTEXT:
 						lcdGotoXY(0, 1);     //Position the cursor at the beginning of the second line
 						lcdPrintData(textLine, strlen(textLine)); //Display the text on the LCD
-						usart1_sendstring(textLine, strlen(textLine));	/* transmit over USART 1 the value of the ADC */
-						usart1_transmit('\n');
-						usart1_transmit('\r');
+						usart0_sendstring(textLine, strlen(textLine));	/* transmit over USART 1 the value of the ADC */
+						usart0_transmit('\n');
+						usart0_transmit('\r');
 						break;
 					default:
 						lcdGotoXY(0, 1);     //Position the cursor on the first character of the first line
@@ -399,15 +400,15 @@ ISR(ADC_vect){
 	adc_value += (ADCH<<8); //shift the high byte by 8bits to put the high byte in the variable
 }
 
-ISR(USART1_RX_vect){
+ISR(USART0_RX_vect){
 	char ReceivedByte;
-	ReceivedByte = UDR1;
-	UDR1 = ReceivedByte;
-	if (uCursor < DISPLAYLENGTH){
-		echoString[uCursor] = ReceivedByte;
-		echoString[++uCursor] = '\0';
-	} else {
-		uCursor = 0;	// reset the cursor to the beginning of the line
-		echoString[uCursor] = '\0'; 
-	}
+	ReceivedByte = UDR0;
+	//UDR1 = ReceivedByte;
+	//if (uCursor < DISPLAYLENGTH){
+		//echoString[uCursor] = ReceivedByte;
+		//echoString[++uCursor] = '\0';
+	//} else {
+		//uCursor = 0;	// reset the cursor to the beginning of the line
+		//echoString[uCursor] = '\0'; 
+	//}
 }
