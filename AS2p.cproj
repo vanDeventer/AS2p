@@ -148,10 +148,31 @@
     </ToolchainSettings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="can_drv.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="can_drv.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="can_lib.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="can_lib.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="delay.c">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="delay.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="ECU_codes.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="ext_dev.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="ext_dev.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="global.h">
