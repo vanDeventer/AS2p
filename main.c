@@ -2,7 +2,7 @@
  * AS2p.c
  *
  * Created: 5/15/2018 10:00:41 AM
- * Modified: August 10, 2018
+ * Modified: September 16, 2019
  * Author : Jan van Deventer
  * Course: E0009E Automotive Systems 2
  */ 
@@ -22,10 +22,6 @@
 #include "lcd.h"
 #include "gpio.h"
 
-#define DISPLAYLENGTH 16	/* number of characters on the display */
-
-volatile unsigned char buttons;		// This registers holds a copy of PINC when an external interrupt 6 has occurred.
-volatile unsigned char bToggle = 0;	// This registers is a boolean that is set when an interrupt 6 occurs and cleared when serviced in the code.
 volatile unsigned char textEdit= 0;	// Boolean to enable text editing.
 volatile uint16_t adc_value;  //Allocate the double byte memory space into which the result of the 10 bits Analog to Digital Converter (ADC) is stored.
 
@@ -67,48 +63,6 @@ int initDisplay(void)
 	return(0);
 }
 
-///** This function uses the push buttons to let the user write text.*/
-//unsigned int DbTEXThandler(char *s, unsigned int position)
-//{
-	//switch(buttons & 0b11111000)
-	//{
-		//case 0b10000000:			//S5 center button
-			//PORTC |= 0b00000100;	//Turn on LED5
-			//textEdit = !textEdit;
-			//if (textEdit){
-				//lcdGotoXY(10, 0);     //Position the cursor on
-				//lcdPrintData("input", 5); //Inform the user of edit mode in upper right part of the LCD
-			//} else {
-				//lcdGotoXY(10, 0);     //Position the cursor on
-				//lcdPrintData("     ", 5); //Clear the upper right part of the LCD
-			//}
-			//break;
-		//case 0b01000000:			//S4  upper button
-			//if (s[position] < 'z' && textEdit)	// if you did not reach the ASCII letter z or 0x7A, you can go to the next letter in the table
-				//s[position]++;
-			//break;
-		//case 0b00100000:			//S3 left button
-			//if (position > 0 && textEdit) 		//If you have not reached the right side of the display, you can move the cursor one step to the right
-				//position--;
-			//break;
-		//case 0b00010000:			//S2 lower button
-			//if (s[position] > 'A' && textEdit)	// if you did not reach the ASCII letter A, you can go to the previous letter in the table
-				//s[position]--;
-			//break;
-		//case 0b00001000:			//S1 right button
-			//if (position < (DISPLAYLENGTH-1) && textEdit)		//If you have not reached the right side of the display with index starting at 0, you can move the cursor one step to the right
-			//{
-				//position++;
-				//s[position] = 'A';
-				//s[position+1] ='\0';
-			//}
-			//break;
-		//default:
-			//PORTC &= 0b11111011;	//Turn off LED5
-			//break;
-	//}
-	//return position;
-//}
 
 /** This is the main function of our application. There is one and only one such function.
  * The code starts executing here.
@@ -116,15 +70,12 @@ int initDisplay(void)
 int main(void)
 {
 	unsigned char temp ;		//Allocate memory for  temp
-// 	char cursor = 0;				/* allocate a variable to keep track of the cursor position and initialize it to 0 */
-//	char textLine[DISPLAYLENGTH + 1];	/* allocate a consecutive array of 16 characters where your text will be stored with an end of string */
 	char text[10];					//Allocate an array of 10 bytes to store text
 
 	uint16_t adcBuffer;
 
 	temp = initGPIO();			//Set up the data direction register for both ports B, C and G
 	temp = initDisplay();	//Set up the display
-//	temp = initExtInt();	//Set up the external interrupt for the push buttons
 	temp = initADC();			// Setup the Analog to Digital Converter
 	
 	ADCSRA |= (1<<ADSC);		//Start ADC
@@ -132,11 +83,15 @@ int main(void)
 
 	while(1)
 	{
-		ADCSRA &= ~(1<<ADIE);		//disable ADC interrupt to prevent value update during the conversion
 		adcBuffer = adc_value;
-		ADCSRA |= (1<<ADIE);		//re-enable ADC interrupt
+		/* When an ADC conversion is complete, the result is found in these two registers.
+		* When ADCL is read, the ADC Data Register is not updated until ADCH is read.
+		* Consequently, if the result is left adjusted and no more than 8-bit precision is required, it is sufficient to read ADCH.
+		* Otherwise, ADCL must be read first, then ADCH. The ADLAR bit in ADMUX, and the MUXn bits in ADMUX affect the way the result is read from the registers.
+		* If ADLAR is set, the result is left adjusted. If ADLAR is cleared (default), the result is right adjusted.
+		*/
 
-		itoa(adcBuffer, text, 9);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
+		itoa(adcBuffer, text, 10);	//Convert the unsigned integer to an ascii string; look at 3.6 "The C programming language"
 		OCR0A = adcBuffer >> 2;		// using the top 8 bits of the ADC, load OCR0A to compare to the timer Counter 0 to generate aPWM
 
 		if (adcBuffer>852){
@@ -175,12 +130,6 @@ int main(void)
 
 /* the functions below are Interrupt Service Routines, they are never called by software */
 
-/** This function is executed every time Interrupt 6 is triggered. */
-SIGNAL(SIG_INTERRUPT6)  //Execute the following code if an INT6 interrupt has been generated. It is kept short.
-{
-	bToggle = 1;	//Some push button has been pushed or released. Action needs to be taken.
-	buttons = PINC; //Take a snapshot of the input register of Port C where the push buttons are connected.
-}
 
 ISR(ADC_vect){
 	adc_value = ADCL;		//Load the low byte of the ADC result
